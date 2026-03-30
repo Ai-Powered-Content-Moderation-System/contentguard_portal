@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Classify Comments - ContentGuard AI{% endblock %}
+
+{% block content %}
+<div class="glass-container">
+    <h1>🧠 Manual Classification</h1>
+    <p>Classify individual comments or upload a file for batch classification.</p>
+
+    <div class="tabs">
+        <button class="tab active" data-tab="single">Single Comment</button>
+        <button class="tab" data-tab="batch">Batch Upload</button>
+    </div>
+    <button class="btn btn-secondary" onclick="showFilterModalForCurrentPage()">✨ Apply Filters</button>
+    <!-- Single Comment Tab -->
+    <div id="tab-single" class="tab-content active">
+        <form id="single-classify-form">
+            <div class="form-group">
+                <label for="comment-text">Comment Text</label>
+                <textarea id="comment-text" rows="4" required></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Classify</button>
+        </form>
+        <div id="single-result" class="result-box" style="display:none; margin-top:2rem;"></div>
+    </div>
+
+    <!-- Batch Upload Tab -->
+    <div id="tab-batch" class="tab-content">
+        <form id="batch-classify-form" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="batch-file">Upload CSV/Text File</label>
+                <input type="file" id="batch-file" name="file" accept=".csv,.txt" required>
+            </div>
+            <div class="form-group">
+                <label for="delimiter">Delimiter (for CSV)</label>
+                <input type="text" id="delimiter" name="delimiter" value="," placeholder="e.g. , or tab">
+            </div>
+            <button type="submit" class="btn btn-primary">Classify Batch</button>
+        </form>
+        <div id="batch-result" class="result-box" style="display:none; margin-top:2rem;"></div>
+    </div>
+</div>
+
+<style>
+.result-box {
+    background: rgba(255,255,255,0.05);
+    border-radius: 10px;
+    padding: 1.5rem;
+    border: 1px solid var(--glass-border);
+    max-height: 500px;
+    overflow-y: auto;
+}
+.result-item {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: rgba(0,0,0,0.2);
+    border-radius: 5px;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Tabs
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            const tabId = this.dataset.tab;
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+        });
+    });
+
+    // Single classification
+    document.getElementById('single-classify-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = document.getElementById('comment-text').value;
+        const resultDiv = document.getElementById('single-result');
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = '<div class="spinner"></div>';
+
+        try {
+            const response = await fetch('/classify/comment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text })
+            });
+            const data = await response.json();
+            if (data.success) {
+                const r = data.result;
+                resultDiv.innerHTML = `
+                    <h3>Classification Result</h3>
+                    <div class="result-item">
+                        <strong>Level 1:</strong> ${r.level1.category} (${(r.level1.confidence*100).toFixed(1)}%)<br>
+                        <strong>Level 2:</strong> ${r.level2.category || '-'} (${(r.level2.confidence*100).toFixed(1)}%)<br>
+                        <strong>Level 3:</strong> ${r.level3.category || '-'} (${(r.level3.confidence*100).toFixed(1)}%)
+                    </div>
+                `;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-error">Error: ${data.error}</div>`;
+            }
+        } catch (err) {
+            resultDiv.innerHTML = `<div class="alert alert-error">Request failed: ${err.message}</div>`;
+        }
+    });
+    function showFilterModalForCurrentPage() {
+        const jobId = prompt("Enter the Job ID to apply filters:");
+        if (jobId) {
+            showFilterModal(jobId);
+        }
+    }
+    // Batch classification (simplified – would need file upload handling)
+    document.getElementById('batch-classify-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const resultDiv = document.getElementById('batch-result');
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = '<div class="spinner"></div>';
+
+        try {
+            const response = await fetch('/classify/batch-upload', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            if (data.success) {
+                let html = '<h3>Batch Results</h3>';
+                data.results.forEach((item, idx) => {
+                    html += `<div class="result-item">
+                        <strong>#${idx+1}:</strong> ${item.text}<br>
+                        Level1: ${item.classification.level1.category} (${(item.classification.level1.confidence*100).toFixed(1)}%)
+                    </div>`;
+                });
+                resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-error">Error: ${data.error}</div>`;
+            }
+        } catch (err) {
+            resultDiv.innerHTML = `<div class="alert alert-error">Request failed: ${err.message}</div>`;
+        }
+    });
+});
+</script>
+{% endblock %}

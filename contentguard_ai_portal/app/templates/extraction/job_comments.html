@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Comments for {{ job.video_title or job.video_url }} - ContentGuard AI{% endblock %}
+
+{% block content %}
+<div class="extraction-container">
+    <div class="header-section">
+        <h1>📝 Comments from {{ job.video_title or job.video_url }}</h1>
+        <p>Status: <span class="job-status status-{{ job.status }}">{{ job.status }}</span></p>
+        <p>Total comments: {{ job.comment_count }} (Good: {{ job.good_count }}, Bad: {{ job.bad_count }})</p>
+        <a href="/extract" class="btn btn-secondary">← Back to My Extractions</a>
+    </div>
+
+    <div class="comments-table-wrapper">
+        <table class="comments-table">
+            <thead>
+                <tr>
+                    <th>Author</th>
+                    <th>Comment</th>
+                    <th>Level 1</th>
+                    <th>Level 2</th>
+                    <th>Level 3</th>
+                    <th>Confidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for comment in comments %}
+                <tr class="{% if comment.level1_category == 'bad' %}bad-row{% endif %}">
+                    <td>{{ comment.author or 'Unknown' }}</td>
+                    <td class="comment-content">{{ comment.content[:200] }}{% if comment.content|length > 200 %}...{% endif %}</td>
+                    <td>
+                        <span class="badge {% if comment.level1_category == 'good' %}badge-good{% else %}badge-bad{% endif %}">
+                            {{ comment.level1_category or 'N/A' }}
+                        </span>
+                    </td>
+                    <td>{{ comment.level2_category or '-' }}</td>
+                    <td>{{ comment.level3_subcategory or '-' }}</td>
+                    <td>
+                        {% if comment.level1_confidence %}
+                            {{ "%.1f"|format(comment.level1_confidence * 100) }}%
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="no-data">No comments found for this job.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+.extraction-container {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+.header-section {
+    margin-bottom: 1.5rem;
+}
+.comments-table-wrapper {
+    overflow-x: auto;
+    background: rgba(255,255,255,0.05);
+    border-radius: 10px;
+    margin-top: 1.5rem;
+}
+.comments-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.comments-table th:nth-child(3),
+.comments-table td:nth-child(3) {
+    width: 150px;          /* adjust as needed */
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Content column (2nd column) */
+.comments-table th:nth-child(2),
+.comments-table td:nth-child(2) {
+    width: auto;           /* takes remaining space */
+    max-width: 500px;      /* optional, prevents too wide */
+    word-wrap: break-word;
+    white-space: normal;
+}
+
+/* Optional: make ID column narrow */
+.comments-table th:nth-child(1),
+.comments-table td:nth-child(1) {
+    width: 60px;
+}
+
+.comments-table th {
+    background: rgba(6,224,213,0.1);
+    padding: 1rem;
+    text-align: left;
+    color: var(--primary-color);
+}
+.comments-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.comment-content {
+    max-width: 500px;
+    word-wrap: break-word;
+}
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.badge-good {
+    background: rgba(16,185,129,0.2);
+    color: #10b981;
+}
+.badge-bad {
+    background: rgba(239,68,68,0.2);
+    color: #ef4444;
+}
+.bad-row {
+    background: rgba(239,68,68,0.05);
+}
+.no-data {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+.job-status {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+.status-pending { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.status-processing { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+.status-completed { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.status-failed { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.btn-secondary {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid var(--glass-border);
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    color: white;
+    text-decoration: none;
+    display: inline-block;
+}
+</style>
+{% endblock %}

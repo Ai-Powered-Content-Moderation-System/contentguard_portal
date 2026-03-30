@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Categories - ContentGuard AI{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <div class="admin-header">
+        <h1>📂 Manage Categories & Subcategories</h1>
+        <p>Define level2 categories and their subcategories for comment classification.</p>
+    </div>
+
+    <div class="admin-cards" style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+        <!-- Level2 Categories Section -->
+        <div class="admin-card">
+            <h2>Level2 Categories</h2>
+            <form method="post" action="/admin/categories/add">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Order</label>
+                    <input type="number" name="order" value="0">
+                </div>
+                <button type="submit" class="btn btn-primary">Add Category</button>
+            </form>
+            <hr>
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Name</th><th>Order</th><th>Active</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                    {% for cat in categories %}
+                    <tr>
+                        <td>{{ cat.name }}</td>
+                        <td>{{ cat.order }}</td>
+                        <td>{{ '✅' if cat.is_active else '❌' }}</td>
+                        <td>
+                            <button onclick="openEditCategory({{ cat.id }}, '{{ cat.name }}', '{{ cat.description }}', {{ cat.order }}, {{ cat.is_active|lower }})"
+                                    class="btn-icon">✏️</button>
+                            <form method="post" action="/admin/categories/{{ cat.id }}/delete" style="display:inline;"
+                                  onsubmit="return confirm('Delete this category and its subcategories?')">
+                                <button type="submit" class="btn-icon delete">🗑️</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Subcategories Section -->
+        <div class="admin-card">
+            <h2>Subcategories</h2>
+            <form method="post" action="/admin/subcategories/add">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label>Parent Category</label>
+                    <select name="category_id" required>
+                        <option value="">Select category</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Order</label>
+                    <input type="number" name="order" value="0">
+                </div>
+                <button type="submit" class="btn btn-primary">Add Subcategory</button>
+            </form>
+            <hr>
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Name</th><th>Category</th><th>Order</th><th>Active</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                    {% for sub in subcategories %}
+                    <tr>
+                        <td>{{ sub.name }}</td>
+                        <td>{{ sub.category.name if sub.category else '?' }}</td>
+                        <td>{{ sub.order }}</td>
+                        <td>{{ '✅' if sub.is_active else '❌' }}</td>
+                        <td>
+                            <button onclick="openEditSubcategory({{ sub.id }}, '{{ sub.name }}', {{ sub.category_id }}, '{{ sub.description }}', {{ sub.order }}, {{ sub.is_active|lower }})"
+                                    class="btn-icon">✏️</button>
+                            <form method="post" action="/admin/subcategories/{{ sub.id }}/delete" style="display:inline;"
+                                  onsubmit="return confirm('Delete this subcategory?')">
+                                <button type="submit" class="btn-icon delete">🗑️</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Edit Modals (hidden) -->
+    <div id="editCategoryModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h3>Edit Category</h3>
+            <form method="post" id="editCategoryForm">
+                <input type="hidden" name="category_id" id="edit_cat_id">
+                <div class="form-group"><label>Name</label><input type="text" name="name" id="edit_cat_name" required></div>
+                <div class="form-group"><label>Description</label><textarea name="description" id="edit_cat_desc" rows="2"></textarea></div>
+                <div class="form-group"><label>Order</label><input type="number" name="order" id="edit_cat_order"></div>
+                <div class="form-group"><label><input type="checkbox" name="is_active" id="edit_cat_active"> Active</label></div>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="editSubcategoryModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h3>Edit Subcategory</h3>
+            <form method="post" id="editSubcategoryForm">
+                <input type="hidden" name="sub_id" id="edit_sub_id">
+                <div class="form-group"><label>Name</label><input type="text" name="name" id="edit_sub_name" required></div>
+                <div class="form-group">
+                    <label>Parent Category</label>
+                    <select name="category_id" id="edit_sub_cat_id" required>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group"><label>Description</label><textarea name="description" id="edit_sub_desc" rows="2"></textarea></div>
+                <div class="form-group"><label>Order</label><input type="number" name="order" id="edit_sub_order"></div>
+                <div class="form-group"><label><input type="checkbox" name="is_active" id="edit_sub_active"> Active</label></div>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    function openEditCategory(id, name, desc, order, active) {
+        document.getElementById('edit_cat_id').value = id;
+        document.getElementById('edit_cat_name').value = name;
+        document.getElementById('edit_cat_desc').value = desc;
+        document.getElementById('edit_cat_order').value = order;
+        document.getElementById('edit_cat_active').checked = active;
+        document.getElementById('editCategoryForm').action = `/admin/categories/${id}/edit`;
+        document.getElementById('editCategoryModal').style.display = 'block';
+    }
+    function openEditSubcategory(id, name, catId, desc, order, active) {
+        document.getElementById('edit_sub_id').value = id;
+        document.getElementById('edit_sub_name').value = name;
+        document.getElementById('edit_sub_cat_id').value = catId;
+        document.getElementById('edit_sub_desc').value = desc;
+        document.getElementById('edit_sub_order').value = order;
+        document.getElementById('edit_sub_active').checked = active;
+        document.getElementById('editSubcategoryForm').action = `/admin/subcategories/${id}/edit`;
+        document.getElementById('editSubcategoryModal').style.display = 'block';
+    }
+    document.querySelectorAll('.modal-close').forEach(btn => {
+        btn.addEventListener('click', function() {
+            this.closest('.modal').style.display = 'none';
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Admin: Extraction Jobs - ContentGuard AI{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <div class="admin-header">
+        <h1>📤 Extraction Jobs Management</h1>
+        <p>Process user requests by uploading extracted CSV files.</p>
+    </div>
+
+    <div class="recent-jobs">
+        <h2>All Extraction Requests</h2>
+        {% if jobs %}
+        <table class="jobs-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Video ID</th> 
+                    <th>Video URL</th>
+
+                    <th>Status</th>
+                    <th>Requested</th>
+                    <th>Comments</th>
+                    <th>Actions</th>
+                </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr data-job-id="{{ job.job_id }}">
+                    <td>{{ job.user.username }} ({{ job.user_id }})</td>
+                    <td><code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">{{ job.video_id }}</code></td>
+                    <td><a href="{{ job.video_url }}" target="_blank">{{ job.video_title or job.video_url }}</a></td>
+                    <td>
+                        <span class="job-status status-{{ job.status }}">
+                            {{ job.status }}
+                        </span>
+                    </td>
+                    <td>{{ job.requested_at.strftime('%Y-%m-%d %H:%M') if job.requested_at else '-' }}</td>
+                    <td>{{ job.comment_count or 0 }}</td>
+                    <td>
+                        {% if job.status == 'pending' %}
+                        <form action="/admin/extraction-jobs/{{ job.job_id }}/upload-csv" method="post" enctype="multipart/form-data" class="upload-form">
+                            <input type="file" name="csv_file" accept=".csv" required>
+                            <button type="submit" class="btn btn-sm btn-primary">Upload CSV</button>
+                        </form>
+                        {% elif job.status == 'completed' %}
+                        <a href="/extract/jobs/{{ job.job_id }}/comments" class="btn btn-sm btn-secondary" target="_blank">View Comments</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <p>No extraction jobs found.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.admin-container {
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+.jobs-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(255,255,255,0.02);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 1rem;
+}
+.jobs-table th {
+    background: rgba(6,224,213,0.1);
+    padding: 1rem;
+    text-align: left;
+    color: var(--primary-color);
+}
+.jobs-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.job-status {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+.status-pending { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.status-processing { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+.status-completed { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.status-failed { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.upload-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+.upload-form input[type="file"] {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid var(--glass-border);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    color: white;
+}
+.btn-sm {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8rem;
+}
+.btn-primary {
+    background: var(--primary-color);
+    border: none;
+    color: white;
+    cursor: pointer;
+}
+.btn-secondary {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid var(--glass-border);
+    text-decoration: none;
+    color: white;
+}
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-secondary);
+}
+</style>
+{% endblock %}

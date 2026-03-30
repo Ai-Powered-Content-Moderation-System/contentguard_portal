@@ -1,0 +1,831 @@
+{% extends "base.html" %}
+
+{% block title %}Extraction Dashboard - ContentGuard AI{% endblock %}
+
+{% block content %}
+<div class="extraction-container">
+    <div class="header-section">
+        <h1>🔄 Comment Extraction</h1>
+        <p>Extract comments from YouTube videos or upload files for analysis</p>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ total_jobs }}</div>
+            <div class="stat-label">Total Jobs</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ total_extracted }}</div>
+            <div class="stat-label">Comments Extracted</div>
+        </div>
+    </div>
+
+    <!-- Extraction Methods -->
+    <div class="extraction-methods">
+        
+        <div class="method-card">
+            <h3>📺 YouTube Extraction</h3>
+            <p>Extract comments from any YouTube video</p>
+            <form id="youtubeForm" onsubmit="extractYouTube(event, false)">
+                <div class="form-group">
+                    <label>YouTube URL:</label>
+                    <input type="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required>
+                </div>
+                <div class="form-group">
+                    <label>Max Comments:</label>
+                    <input type="number" name="max_comments" id="maxCommentsInput" value="500" min="1" max="10000">
+                </div>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" name="include_replies" checked>
+                        Include Replies
+                    </label>
+                    <label>
+                        <input type="checkbox" name="apply_classification" checked>
+                        Auto-classify
+                    </label>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Extract Comments</button>
+                    <button type="button" class="btn btn-secondary" onclick="extractAllComments()">📥 Extract All Comments</button>
+                </div>
+            </form>
+        </div>
+        <div class="method-card">
+            <h3>📁 File Upload</h3>
+            <p>Upload a text file with comments</p>
+            <form id="uploadForm" onsubmit="uploadFile(event)" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label>Select File:</label>
+                    <input type="file" name="file" accept=".txt,.csv" required>
+                </div>
+                <div class="form-group">
+                    <label>Extraction Pattern (optional):</label>
+                    <select name="pattern_id">
+                        <option value="">None (line by line)</option>
+                        {% for pattern in patterns %}
+                        <option value="{{ pattern.id }}">{{ pattern.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" name="apply_classification" checked>
+                        Auto-classify
+                    </label>
+                </div>
+                <button type="submit" class="btn btn-primary">Upload & Extract</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Recent Jobs -->
+    <div class="recent-jobs">
+        <h2>Recent Extraction Jobs</h2>
+        {% if recent_jobs %}
+        <table class="jobs-table">
+            <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                    <th>Extracted</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in recent_jobs %}
+                <tr data-job-id="{{ job.job_id }}">
+                    <td>{{ job.job_id[:8] }}...</td>
+                    <td>
+                        {% if job.source_type == 'youtube' %}
+                        📺 YouTube
+                        {% else %}
+                        📁 File
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="job-status status-{{ job.status }}">
+                            {{ job.status }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="progress-mini">
+                            <div class="progress-fill" style="width: {{ job.progress }}%"></div>
+                            <span>{{ job.progress }}%</span>
+                        </div>
+                    </td>
+
+                    <td>{{ job.extracted_comments }}/{{ job.total_comments }}</td>
+                    <td>{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+
+                    <td>
+                        <a href="/extract/jobs/{{ job.job_id }}" class="btn-icon" title="View">👁️</a>
+                        {% if job.status == 'completed' and job.output_file %}
+                        <a href="/extract/jobs/{{ job.job_id }}/download" class="btn-icon" title="Download">📥</a>
+                        {% endif %}
+                        {% if job.status in ['pending', 'processing'] and user.is_admin %}
+                        <button onclick="cancelJob('{{ job.job_id }}')" class="btn-icon" title="Cancel">⏹️</button>
+                        <button class="btn-icon sparkle" onclick="showFilterModal('{{ job.job_id }}')" title="Apply Filters">✨</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <p>No extraction jobs yet. Start by extracting from YouTube or uploading a file.</p>
+        </div>
+        {% endif %}
+    </div>
+
+<style>
+.modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.5); /* Background overlay */
+    width: 100%;
+    height: 100%;
+    z-index: 9999;
+    display: none;
+}
+
+.modal-content {
+    background: #070707;
+    padding: 2rem;
+    border-radius: 10px;
+    max-width: 500px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.modal-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 1.5rem;
+    color: #000;
+    cursor: pointer;
+    border: none;
+    background: none;
+    transition: color 0.3s ease;
+}
+
+.modal-close:hover {
+    color: var(--primary-color);
+}
+
+h2 {
+    color: var(--primary-color);
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.modal-body {
+    margin-bottom: 1.5rem;
+}
+
+.progress-container {
+    margin-top: 1.5rem;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+    transition: width 0.3s ease;
+}
+
+.progress-status {
+    text-align: center;
+    margin-top: 0.5rem;
+    color: var(--text-secondary);
+}
+
+.modal-footer {
+    text-align: right;
+}
+
+.btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    background: var(--primary-color);
+    border: none;
+    color: white;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background 0.3s ease;
+}
+
+.btn:hover {
+    background: var(--secondary-color);
+}
+
+#modalStats {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+    font-size: 1rem;
+    color: var(--text-secondary);
+}
+
+#modalStats div {
+    flex: 1;
+    text-align: center;
+}
+</style>
+
+<div id="extractionModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="modal-close" onclick="closeExtractionModal()">&times;</span>
+        <h2 id="modalTitle">📥 Extracting Comments</h2>
+        <div class="modal-body">
+            <div id="modalVideoInfo" style="margin-bottom: 15px;"></div>
+            <div class="progress-container" style="margin: 20px 0;">
+                <div class="progress-bar">
+                    <div id="modalProgressBar" class="progress-fill" style="width: 0%;"></div>
+                </div>
+                <div id="modalProgressText" class="progress-status" style="margin-top: 10px;">Starting...</div>
+                <div id="modalProgressDetail" class="progress-detail" style="font-size: 0.9rem; color: var(--text-secondary);"></div>
+            </div>
+            <div id="modalStats" style="display: flex; justify-content: space-around; margin-top: 20px;">
+                <div><strong>Extracted:</strong> <span id="modalExtracted">0</span></div>
+                <div><strong>Total:</strong> <span id="modalTotal">0</span></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeExtractionModal()">Close</button>
+        </div>
+    </div>
+</div>
+<style>
+.extraction-container {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.extraction-methods {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 2rem;
+    margin: 2rem 0;
+}
+
+.method-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 15px;
+    padding: 2rem;
+    border: 1px solid var(--glass-border);
+}
+
+.method-card h3 {
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+}
+
+.method-card p {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--glass-border);
+    border-radius: 5px;
+    color: white;
+}
+
+.checkbox-group {
+    display: flex;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+}
+
+.progress-container {
+    margin-top: 1rem;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+    transition: width 0.3s ease;
+}
+
+.progress-status {
+    text-align: center;
+    margin-top: 0.5rem;
+    color: var(--text-secondary);
+}
+
+.recent-jobs {
+    margin-top: 3rem;
+}
+
+.jobs-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.jobs-table th {
+    background: rgba(6, 224, 213, 0.1);
+    padding: 1rem;
+    text-align: left;
+    color: var(--primary-color);
+}
+
+.jobs-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.job-status {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.status-pending {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+.status-processing {
+    background: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+}
+
+.status-completed {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+
+.status-failed {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.progress-mini {
+    width: 100px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-mini .progress-fill {
+    height: 100%;
+}
+
+.progress-mini span {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 0.7rem;
+    line-height: 20px;
+    color: white;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-secondary);
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0.25rem;
+    transition: color 0.3s ease;
+}
+
+.btn-icon:hover {
+    color: var(--primary-color);
+}
+</style>
+
+<script>
+async function extractYouTube(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    const progressContainer = document.getElementById('youtubeProgress');
+    const progressBar = progressContainer.querySelector('.progress-fill');
+    const progressStatus = progressContainer.querySelector('.progress-status');
+    
+    progressContainer.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressStatus.textContent = 'Starting extraction...';
+    
+    try {
+        const response = await fetch('/extract/admin-youtube', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            progressStatus.textContent = 'Extraction started! Job ID: ' + data.job_id;
+            // Start polling for job status
+            pollJobStatus(data.job_id);
+        } else {
+            progressStatus.textContent = 'Error: ' + data.error;
+        }
+    } catch (error) {
+        progressStatus.textContent = 'Error: ' + error.message;
+    }
+}
+
+async function uploadFile(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    try {
+        const response = await fetch('/extract/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('File uploaded successfully! Job ID: ' + data.job_id);
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+// Replace the existing pollJobStatus function with this enhanced version
+
+async function pollJobStatus(jobId) {
+    const checkStatus = async () => {
+        try {
+            const response = await fetch(`/extract/jobs/${jobId}/status`);
+            const data = await response.json();
+            
+            if (data.success) {
+                const progressContainer = document.getElementById('youtubeProgress');
+                const progressBar = progressContainer.querySelector('.progress-fill');
+                const progressStatus = progressContainer.querySelector('.progress-status');
+                const progressDetail = document.getElementById('progressDetail') || createProgressDetail();
+                
+                // Update progress bar
+                progressBar.style.width = data.progress + '%';
+                
+                // Update status message based on progress
+                if (data.status === 'processing') {
+                    if (data.progress < 15) {
+                        progressStatus.textContent = '📡 Fetching video information...';
+                    } else if (data.progress < 60) {
+                        // Extraction stage
+                        if (data.total > 0) {
+                            progressStatus.textContent = `📥 Extracting comments: ${data.extracted}/${data.total} (${Math.round(data.progress)}%)`;
+                            progressDetail.textContent = `Fetching from YouTube... This may take a few minutes for videos with many comments.`;
+                        } else {
+                            progressStatus.textContent = `📥 Fetching comments from YouTube... (${Math.round(data.progress)}%)`;
+                            progressDetail.textContent = `Please wait while we retrieve comments. This may take a moment.`;
+                        }
+                    } else if (data.progress < 90) {
+                        // Processing stage
+                        progressStatus.textContent = `⚙️ Processing comments: ${data.extracted}/${data.total} (${Math.round(data.progress)}%)`;
+                        progressDetail.textContent = `Classifying and encrypting comments...`;
+                    } else if (data.progress < 100) {
+                        // Finalizing stage
+                        progressStatus.textContent = `💾 Saving results... (${Math.round(data.progress)}%)`;
+                        progressDetail.textContent = `Almost done!`;
+                    }
+                    
+                    // Continue polling
+                    setTimeout(checkStatus, 2000);
+                    
+                } else if (data.status === 'completed') {
+                    progressStatus.textContent = '✅ Extraction completed successfully!';
+                    progressDetail.textContent = `Processed ${data.extracted} comments.`;
+                    progressBar.style.width = '100%';
+                    
+                    // Show success message and reload after 3 seconds
+                    setTimeout(() => {
+                        progressContainer.style.display = 'none';
+                        location.reload();
+                    }, 3000);
+                    
+                } else if (data.status === 'failed') {
+                    progressStatus.textContent = '❌ Extraction failed';
+                    progressDetail.textContent = data.error || 'Unknown error occurred';
+                    progressBar.style.width = '0%';
+                    
+                } else if (data.status === 'cancelled') {
+                    progressStatus.textContent = '⏹️ Job cancelled';
+                    progressDetail.textContent = 'Extraction was cancelled by user.';
+                    progressBar.style.width = '0%';
+                }
+            }
+        } catch (error) {
+            console.error('Error polling job status:', error);
+        }
+    };
+    
+    setTimeout(checkStatus, 2000);
+}
+
+function createProgressDetail() {
+    const progressContainer = document.getElementById('youtubeProgress');
+    const detailDiv = document.createElement('div');
+    detailDiv.id = 'progressDetail';
+    detailDiv.className = 'progress-detail';
+    detailDiv.style.marginTop = '0.5rem';
+    detailDiv.style.fontSize = '0.9rem';
+    detailDiv.style.color = 'var(--text-secondary)';
+    progressContainer.appendChild(detailDiv);
+    return detailDiv;
+}
+
+
+function updateJobInTable(job) {
+    const row = document.querySelector(`[data-job-id="${job.job_id}"]`);
+    if (row) {
+        const statusCell = row.querySelector('.job-status');
+        const progressCell = row.querySelector('.progress-mini .progress-fill');
+        const extractedCell = row.querySelector('td:nth-child(5)');
+        
+        if (statusCell) {
+            statusCell.className = `job-status status-${job.status}`;
+            statusCell.textContent = job.status;
+        }
+        
+        if (progressCell) {
+            progressCell.style.width = job.progress + '%';
+            progressCell.nextElementSibling.textContent = job.progress + '%';
+        }
+        
+        if (extractedCell) {
+            extractedCell.textContent = `${job.extracted}/${job.total}`;
+        }
+    }
+}
+
+async function cancelJob(jobId) {
+    if (!confirm('Are you sure you want to cancel this job?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/extract/jobs/${jobId}/cancel`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+</script>
+<script>
+// Variables for polling
+let currentJobId = null;
+let pollInterval = null;
+
+// Open modal and start polling
+function startExtraction(jobId) {
+    currentJobId = jobId;
+    const modal = document.getElementById('extractionModal');
+    modal.style.display = 'block';
+    
+    // Reset display
+    document.getElementById('modalProgressBar').style.width = '0%';
+    document.getElementById('modalProgressText').textContent = 'Starting extraction...';
+    document.getElementById('modalExtracted').textContent = '0';
+    document.getElementById('modalTotal').textContent = '0';
+    document.getElementById('modalVideoInfo').innerHTML = '';
+    
+    pollJobStatusModal(jobId);
+}
+
+// Close modal and stop polling
+function closeExtractionModal() {
+    document.getElementById('extractionModal').style.display = 'none';
+    if (pollInterval) {
+        clearTimeout(pollInterval);
+        pollInterval = null;
+    }
+}
+
+// Extract with specified max comments
+async function extractYouTube(event, extractAll = false) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    if (extractAll) {
+        // Will be handled by extractAllComments separately
+        return;
+    }
+    
+    try {
+        const response = await fetch('/extract/youtube', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        if (data.success) {
+            startExtraction(data.job_id);
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+// Extract all comments (fetches total count first)
+async function extractAllComments() {
+    const form = document.getElementById('youtubeForm');
+    const url = form.querySelector('input[name="url"]').value;
+    if (!url) {
+        alert('Please enter a YouTube URL');
+        return;
+    }
+    
+    // First, fetch video info to get total comments
+    const formData = new FormData();
+    formData.append('url', url);
+    
+    try {
+        const infoResponse = await fetch('/extract/video-info', {
+            method: 'POST',
+            body: formData
+        });
+        const infoData = await infoResponse.json();
+        
+        if (!infoData.success) {
+            alert('Could not fetch video info: ' + infoData.error);
+            return;
+        }
+        
+        const totalComments = infoData.comment_count;
+        if (totalComments === 0) {
+            alert('This video has no comments or comments are disabled.');
+            return;
+        }
+        
+        // Confirm with user
+        if (!confirm(`This video "${infoData.title}" has approximately ${totalComments} comments. Do you want to extract all? This may take a while.`)) {
+            return;
+        }
+        
+        // Now start extraction with max_comments = totalComments
+        const extractFormData = new FormData(form);
+        extractFormData.set('max_comments', totalComments);
+        
+        const response = await fetch('/extract/youtube', {
+            method: 'POST',
+            body: extractFormData
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            startExtraction(data.job_id);
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+// Poll job status and update modal
+function pollJobStatusModal(jobId) {
+    const checkStatus = async () => {
+        try {
+            const response = await fetch(`/extract/jobs/${jobId}/status`);
+            const data = await response.json();
+            
+            if (data.success) {
+                updateModalProgress(data);
+                
+                if (data.status === 'processing') {
+                    pollInterval = setTimeout(checkStatus, 2000);
+                } else if (data.status === 'completed') {
+                    document.getElementById('modalProgressText').textContent = '✅ Extraction completed!';
+                    document.getElementById('modalProgressBar').style.width = '100%';
+                    setTimeout(() => {
+                        closeExtractionModal();
+                        location.reload();
+                    }, 3000);
+                } else if (data.status === 'failed') {
+                    document.getElementById('modalProgressText').textContent = '❌ Extraction failed';
+                    document.getElementById('modalProgressDetail').textContent = data.error || 'Unknown error';
+                }
+            }
+        } catch (error) {
+            console.error('Polling error:', error);
+        }
+    };
+    checkStatus();
+}
+
+// Update modal with latest progress
+function updateModalProgress(data) {
+    const progressBar = document.getElementById('modalProgressBar');
+    const progressText = document.getElementById('modalProgressText');
+    const progressDetail = document.getElementById('modalProgressDetail');
+    const extractedSpan = document.getElementById('modalExtracted');
+    const totalSpan = document.getElementById('modalTotal');
+    const videoInfoDiv = document.getElementById('modalVideoInfo');
+    
+    progressBar.style.width = data.progress + '%';
+    extractedSpan.textContent = data.extracted;
+    totalSpan.textContent = data.total;
+    
+    // Show video title if available
+    if (data.video_title) {
+        videoInfoDiv.innerHTML = `<h3>📺 ${data.video_title}</h3>`;
+    } else {
+        videoInfoDiv.innerHTML = `<h3>⏳ Fetching video info...</h3>`;
+    }
+    
+    // Update status text based on progress
+    if (data.status === 'processing') {
+        if (data.progress < 15) {
+            progressText.textContent = '📡 Fetching video information...';
+        } else if (data.progress < 60) {
+            progressText.textContent = `📥 Extracting comments: ${data.extracted}/${data.total}`;
+            progressDetail.textContent = `Fetching from YouTube... This may take a moment.`;
+        } else if (data.progress < 90) {
+            progressText.textContent = `⚙️ Processing comments: ${data.extracted}/${data.total}`;
+            progressDetail.textContent = `Classifying and encrypting...`;
+        } else {
+            progressText.textContent = `💾 Saving results...`;
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Predefined Filters - ContentGuard AI{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <h1>Predefined Filters</h1>
+    <p>These filters are applied to all users' jobs when they select "Apply Predefined Filters".</p>
+
+    <div class="card">
+        <h3>Import from CSV</h3>
+        <form action="/admin/predefined-filters/import" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>CSV File (with columns: Category, English_Comment, Hindi_Comment, Hinglish_Comment)</label>
+                <input type="file" name="file" accept=".csv,.txt" required>
+            </div>
+            <div class="form-group">
+                <label>Column to use as phrase</label>
+                <select name="column">
+                    <option value="english">English Comment</option>
+                    <option value="hindi">Hindi Comment</option>
+                    <option value="hinglish">Hinglish Comment</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Import Filters</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>Add New Filter</h3>
+        <form action="/admin/predefined-filters/add" method="post">
+            <div class="form-group">
+                <label>Phrase</label>
+                <input type="text" name="phrase" required>
+            </div>
+            <div class="form-group">
+                <label>Category (optional)</label>
+                <input type="text" name="category">
+            </div>
+            <div class="form-group">
+                <label>Action</label>
+                <select name="action">
+                    <option value="mark_bad">Mark as Bad</option>
+                    <option value="mark_good">Mark as Good</option>
+                    <option value="flag">Flag</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Filter</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>Existing Filters</h3>
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>Phrase</th>
+                    <th>Category</th>
+                    <th>Action</th>
+                    <th>Active</th>
+                    <th>Actions</th>
+                </thead>
+            <tbody>
+                {% for filter in filters %}
+                <tr>
+                    <td>{{ filter.phrase }}</td>
+                    <td>{{ filter.category or '-' }}</td>
+                    <td>{{ filter.action }}</td>
+                    <td>
+                        <form action="/admin/predefined-filters/{{ filter.id }}/toggle" method="post" style="display:inline;">
+                            <button type="submit" class="btn-icon">{% if filter.is_active %}✅{% else %}❌{% endif %}</button>
+                        </form>
+                    </td>
+                    <td>
+                        <form action="/admin/predefined-filters/{{ filter.id }}/delete" method="post" onsubmit="return confirm('Delete this filter?')">
+                            <button type="submit" class="btn-icon delete">🗑️</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

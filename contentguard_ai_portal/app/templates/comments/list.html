@@ -1,0 +1,845 @@
+{% extends "base.html" %}
+
+{% block title %}Comments List - ContentGuard AI{% endblock %}
+
+{% block content %}
+<div class="comments-container">
+    <div class="header-section">
+        <h1>📝 Comments Management</h1>
+        <div class="header-actions">
+            <a href="/comments/export" class="btn btn-success">📥 Export</a>
+            <a href="/extract" class="btn btn-primary">🔄 Extract New</a>
+        </div>
+    </div>
+
+    <!-- Job Filter Card -->
+    <div class="job-filter-card" x-data="{ selectedJob: '{{ selected_job_id or '' }}' }">
+        <h3>📁 Your Extraction Jobs</h3>
+        <div class="job-list">
+            {% for item in jobs_with_stats %}
+            <div class="job-item {% if selected_job_id == item.job.job_id %}active{% endif %}">
+                <div class="job-info">
+                    <div class="job-title">
+                        <strong>{{ item.job.video_title or item.job.video_url }}</strong>
+                        <span class="job-status status-{{ item.job.status }}">{{ item.job.status }}</span>
+                    </div>
+                    <div class="job-stats">
+                        <span>📊 {{ item.total }} comments</span>
+                        <span>✅ {{ item.good }} good</span>
+                        <span>❌ {{ item.bad }} bad</span>
+                        <span>⚖️ {{ item.neutral }} neutral</span>
+                        <span>⏳ {{ item.pending }} pending</span>
+                    </div>
+                    <div class="job-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: {{ item.progress }}%; background: var(--primary-color);"></div>
+                        </div>
+                        <span>{{ item.progress }}% reviewed</span>
+                    </div>
+                </div>
+                
+                <div class="job-actions">
+                    {% if selected_job_id == item.job.job_id %}
+                    <a href="/comments" class="btn btn-sm btn-secondary">View All</a>
+                    {% else %}
+                    <a href="/comments?job_id={{ item.job.job_id }}" class="btn btn-sm btn-primary">Select Job</a>
+                    {% endif %}
+                    {% if item.job.status == 'completed' %}
+                    <button class="btn-icon sparkle" onclick="showFilterModal('{{ item.job.job_id }}')" title="Apply Filters">✨</button>
+                    <button class="btn-icon sparkle" onclick="showFilterModal('{{ item.job.job_id }}')" title="Apply Filters">✨✨</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <p class="empty-state">No extraction jobs found. <a href="/extract">Request a job</a></p>
+            {% endfor %}
+        </div>
+    </div>
+
+
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.total }}</div>
+            <div class="stat-label">Total Comments</div>
+            {% if selected_job_id %}<small class="job-context">for this job</small>{% endif %}
+        </div>
+        <div class="stat-card good">
+            <div class="stat-value">{{ stats.good }}</div>
+            <div class="stat-label">Good</div>
+        </div>
+        <div class="stat-card bad">
+            <div class="stat-value">{{ stats.bad }}</div>
+            <div class="stat-label">Bad</div>
+        </div>
+        <div class="stat-card pending">
+            <div class="stat-value">{{ stats.unreviewed }}</div>
+            <div class="stat-label">Needs Review</div>
+        </div>
+    </div>
+    <!-- In the header, before filters, add a container for storing categories -->
+    <div x-data="categoryStore()" x-init="loadCategories()" style="display: none;"></div>
+
+    <script>
+        function showFilterModalForCurrentPage() {
+            const jobId = prompt("Enter the Job ID to apply filters:");
+            if (jobId) {
+                showFilterModal(jobId);
+            }
+        }
+
+    </script>
+    <script>
+        
+        let currentJobId = null;
+
+        function showFilterModal(jobId) {
+            currentJobId = jobId;
+            document.getElementById('filterModal').style.display = 'block';
+        }
+
+        function closeFilterModal() {
+            document.getElementById('filterModal').style.display = 'none';
+        }
+
+        async function applyFilters(type) {
+            if (!currentJobId) {
+                alert('No job selected.');
+                return;
+            }
+            const progressDiv = document.getElementById('filterProgress');
+            progressDiv.style.display = 'block';
+            try {
+                const res = await fetch(`/extract/jobs/${currentJobId}/comments-ids`);
+                const data = await res.json();
+                if (data.comment_ids && data.comment_ids.length) {
+                    const response = await fetch('/comments/apply-filters', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ comment_ids: data.comment_ids, filter_type: type })
+                    });
+                    const result = await response.json();
+                    alert(result.message);
+                    location.reload();  // or update UI dynamically
+                } else {
+                    alert('No comments found in this job.');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            } finally {
+                progressDiv.style.display = 'none';
+                closeFilterModal();
+            }
+        }
+
+        // Close modal when clicking the ×
+        document.addEventListener('DOMContentLoaded', function() {
+            const closeBtn = document.querySelector('#filterModal .modal-close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', closeFilterModal);
+            }
+            // Also close when clicking outside the modal content
+            const modal = document.getElementById('filterModal');
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        closeFilterModal();
+                    }
+                });
+            }
+        });
+    </script>
+    <script>
+    function categoryStore() {
+        return {
+            categories: [],
+            subcategories: {},
+            async loadCategories() {
+                const res = await fetch('/admin/api/categories');
+                this.categories = await res.json();
+                // Pre-fetch subcategories for each category
+                for (let cat of this.categories) {
+                    const subRes = await fetch(`/admin/api/categories/${cat.id}/subcategories`);
+                    this.subcategories[cat.id] = await subRes.json();
+                }
+            },
+            getSubcategories(categoryName) {
+                const cat = this.categories.find(c => c.name === categoryName);
+                if (cat) return this.subcategories[cat.id] || [];
+                return [];
+            }
+        }
+    }
+    </script>
+
+    <!-- Bulk Actions Toolbar (add new actions) -->
+    <div class="bulk-actions">
+        <div class="bulk-toolbar">
+            <label class="checkbox-label">
+                <input type="checkbox" id="select-all">
+                <span>Select All</span>
+            </label>
+
+            <select id="bulk-action-select" class="bulk-select">
+                <option value="">Bulk Actions</option>
+                <option value="good">✅ Mark as Good</option>
+                <option value="bad">❌ Mark as Bad</option>
+                <option value="neutral">⚖️ Mark as Neutral</option>
+            </select>
+            <button class="btn btn-primary" onclick="performBulkAction()">Apply</button>
+
+            <!-- <button class="btn btn-primary" 
+                    hx-post="/comments/batch/review" 
+                    hx-headers='{"Content-Type": "application/json"}' 
+                    hx-vals='js:{"comment_ids": getSelectedIds(), "action": document.getElementById("bulk-action-select").value}'
+                    hx-target=".comments-container" 
+                    hx-swap="outerHTML"
+                    hx-indicator="#loading-indicator">
+                Apply
+            </button> -->
+            <div id="loading-indicator" class="htmx-indicator" style="display:none;">Processing...</div>
+            <!-- Bulk level2 -->
+            <select id="bulk-level2" class="bulk-select">
+                <option value="">Set Level2 Category...</option>
+            </select>
+            <button class="btn btn-secondary" onclick="bulkSetLevel2()">Apply Level2</button>
+
+            <!-- Bulk level3 -->
+            <select id="bulk-level3" class="bulk-select" disabled>
+                <option value="">Select Level2 first</option>
+            </select>
+            <button class="btn btn-secondary" onclick="bulkSetLevel3()">Apply Level3</button>
+        </div>
+    </div>
+    <script>
+        function getSelectedIds() {
+            return Array.from(document.querySelectorAll('.select-item:checked')).map(cb => cb.value);
+        }
+
+        window.categoriesData = null;
+        window.subcategoriesMap = {};
+
+        async function loadGlobalCategories() {
+            if (window.categoriesData) return window.categoriesData;
+            const res = await fetch('/admin/api/categories');
+            const cats = await res.json();
+            window.categoriesData = cats;
+            // Pre‑load subcategories for each category
+            for (let cat of cats) {
+                const subRes = await fetch(`/admin/api/categories/${cat.id}/subcategories`);
+                window.subcategoriesMap[cat.name] = await subRes.json();
+            }
+            return cats;
+        }
+        // Start loading as soon as the page loads
+        document.addEventListener('DOMContentLoaded', loadGlobalCategories);
+
+        // bulk-action
+        // Populate bulk level2 dropdown with categories
+        async function populateBulkCategories() {
+            const response = await fetch('/admin/api/categories');
+            const categories = await response.json();
+            const level2Select = document.getElementById('bulk-level2');
+            level2Select.innerHTML = '<option value="">Set Level2 Category...</option>';
+            for (let cat of categories) {
+                const option = document.createElement('option');
+                option.value = cat.name;
+                option.textContent = cat.name;
+                level2Select.appendChild(option);
+            }
+        }
+
+        // When level2 selection changes, fetch subcategories and populate level3 dropdown
+        async function onBulkLevel2Change() {
+            const level2Select = document.getElementById('bulk-level2');
+            const level3Select = document.getElementById('bulk-level3');
+            const selected = level2Select.value;
+            if (!selected) {
+                level3Select.disabled = true;
+                level3Select.innerHTML = '<option value="">Select Level2 first</option>';
+                return;
+            }
+
+            // Find category ID
+            const categories = await fetch('/admin/api/categories').then(r => r.json());
+            const cat = categories.find(c => c.name === selected);
+            if (cat) {
+                const subs = await fetch(`/admin/api/categories/${cat.id}/subcategories`).then(r => r.json());
+                level3Select.disabled = false;
+                level3Select.innerHTML = '<option value="">Select Subcategory...</option>';
+                for (let sub of subs) {
+                    const option = document.createElement('option');
+                    option.value = sub.name;
+                    option.textContent = sub.name;
+                    level3Select.appendChild(option);
+                }
+            } else {
+                level3Select.disabled = true;
+                level3Select.innerHTML = '<option value="">No subcategories</option>';
+            }
+        }
+
+        // Bulk set level2
+        async function bulkSetLevel2() {
+            const selected = Array.from(document.querySelectorAll('.select-item:checked')).map(cb => cb.value);
+            const level2 = document.getElementById('bulk-level2').value;
+            if (selected.length === 0) {
+                alert('Select comments first');
+                return;
+            }
+            if (!level2) {
+                alert('Select a level2 category');
+                return;
+            }
+            const response = await fetch('/comments/batch/level2', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment_ids: selected, level2 })
+            });
+            if (response.ok) {
+                location.reload();
+            } else {
+                const err = await response.json();
+                alert('Error: ' + (err.detail || 'Unknown error'));
+            }
+        }
+
+        // Bulk set level3
+        async function bulkSetLevel3() {
+            const selected = Array.from(document.querySelectorAll('.select-item:checked')).map(cb => cb.value);
+            const level3 = document.getElementById('bulk-level3').value;
+            if (selected.length === 0) {
+                alert('Select comments first');
+                return;
+            }
+            if (!level3) {
+                alert('Select a subcategory');
+                return;
+            }
+            const response = await fetch('/comments/batch/level3', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment_ids: selected, level3 })
+            });
+            if (response.ok) {
+                location.reload();
+            } else {
+                const err = await response.json();
+                alert('Error: ' + (err.detail || 'Unknown error'));
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            populateBulkCategories();
+            document.getElementById('bulk-level2').addEventListener('change', onBulkLevel2Change);
+        });
+    </script>
+    <!-- Comments Table -->
+    <table class="comments-table">
+        <thead>
+            <tr>
+                <th width="40px"></th>
+                <th>ID</th>
+                <th>Content</th>
+                <th>Author</th>
+                <th>Level 1</th>
+                <th>Level 2</th>
+                <th>Level 3</th>
+                <th>Confidence</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for comment in comments %}
+            <tr class="comment-row {% if comment.level1_category == 'bad' %}bad-row{% endif %}" data-comment-id="{{ comment.comment_id }}">
+                <td><input type="checkbox" class="select-item" value="{{ comment.comment_id }}"></td>
+                <td>{{ comment.id }}</td>
+                <td class="comment-content"><div class="content-preview">{{ comment.content[:] }}{% if comment.content|length > 100 %}...{% endif %}</div></td>
+                <td>{{ comment.author or 'Unknown' }}</td>
+                <td>
+                    <span class="badge {% if comment.level1_category == 'good' %}badge-good{% elif comment.level1_category == 'neutral' %}badge-neutral{% else %}badge-bad{% endif %}">
+                        {{ comment.level1_category or 'N/A' }}
+                    </span>
+                <!-- </td>
+                <td x-data="{ level2: '{{ comment.level2_category or '' }}', categories: [] }"
+                    x-init="categories = await fetch('/admin/api/categories').then(r => r.json())">
+                    <select x-model="level2" @change="updateLevel2($el.value, '{{ comment.comment_id }}')">
+                        <option value="">Select Category</option>
+                        <template x-for="cat in categories">
+                            <option :value="cat.name" x-text="cat.name"></option>
+                        </template>
+                    </select>
+                </td>
+                <td x-data="{ level3: '{{ comment.level3_subcategory or '' }}', subcategories: [] }"
+                    x-init="subcategories = await fetchSubcategories(level2, '{{ comment.comment_id }}')"
+                    @level2-change.window="if($event.detail.commentId == '{{ comment.comment_id }}') { level2 = $event.detail.value; fetchSubcategories(level2, $event.detail.commentId); }">
+                    <select x-model="level3" @change="updateLevel3($el.value, '{{ comment.comment_id }}')">
+                        <option value="">Select Subcategory</option>
+                        <template x-for="sub in subcategories">
+                            <option :value="sub.name" x-text="sub.name"></option>
+                        </template>
+                    </select>
+                </td> -->
+                <td x-data="{ 
+                    level2: '{{ comment.level2_category or '' }}',
+                    categories: window.categoriesData || [],
+                    subcategories: (window.subcategoriesMap && window.subcategoriesMap['{{ comment.level2_category or '' }}']) || []
+                }" x-init="
+                    if (!window.categoriesData) {
+                        loadGlobalCategories().then(() => {
+                            categories = window.categoriesData;
+                            subcategories = window.subcategoriesMap[level2] || [];
+                        });
+                    } else {
+                        categories = window.categoriesData;
+                        subcategories = window.subcategoriesMap[level2] || [];
+                    }
+                ">
+                    <select x-model="level2" @change="
+                        $dispatch('level2-change', { commentId: '{{ comment.comment_id }}', value: $el.value });
+                        subcategories = window.subcategoriesMap[$el.value] || [];
+                        updateLevel2($el.value, '{{ comment.comment_id }}');
+                    ">
+                        <option value="">Select Category</option>
+                        <template x-for="cat in categories">
+                            <option :value="cat.name" x-text="cat.name"></option>
+                        </template>
+                    </select>
+                </td>
+                <td x-data="{ 
+                    level3: '{{ comment.level3_subcategory or '' }}',
+                    subcategories: (window.subcategoriesMap && window.subcategoriesMap['{{ comment.level2_category or '' }}']) || []
+                }" @level2-change.window="
+                    if ($event.detail.commentId == '{{ comment.comment_id }}') {
+                        level2 = $event.detail.value;
+                        subcategories = window.subcategoriesMap[level2] || [];
+                    }
+                ">
+                    <select x-model="level3" @change="updateLevel3($el.value, '{{ comment.comment_id }}')">
+                        <option value="">Select Subcategory</option>
+                        <template x-for="sub in subcategories">
+                            <option :value="sub.name" x-text="sub.name"></option>
+                        </template>
+                    </select>
+                </td>
+                <td>
+                    {% if comment.level1_confidence %}
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width: {{ comment.level1_confidence * 100 }}%"></div>
+                        <span>{{ "%.1f"|format(comment.level1_confidence * 100) }}%</span>
+                    </div>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if comment.is_reviewed %}
+                    <span class="status-badge reviewed">✓ Reviewed</span>
+                    {% else %}
+                    <span class="status-badge pending">⏳ Pending</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="action-buttons">
+                        <button class="btn-icon" onclick="viewComment('{{ comment.comment_id }}')" title="View">👁️</button>
+                        <button class="btn-icon" onclick="editComment('{{ comment.comment_id }}')" title="Edit">✏️</button>
+                        {% if user.is_admin %}
+                        <button class="btn-icon delete" onclick="deleteComment('{{ comment.comment_id }}')" title="Delete">🗑️</button>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10" class="no-data">...</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Filters -->
+    <div class="filters-section" x-data="{ showFilters: false }">
+        <button class="btn btn-secondary" @click="showFilters = !showFilters">
+            🔍 Toggle Filters
+        </button>
+        
+        <div class="filters-panel" x-show="showFilters">
+            <form method="GET" class="filters-form">
+                <div class="filter-group">
+                    <label>Level 1:</label>
+                    <select name="filter_level1">
+                        <option value="">All</option>
+                        <option value="good" {% if filters.level1 == 'good' %}selected{% endif %}>Good</option>
+                        <option value="bad" {% if filters.level1 == 'bad' %}selected{% endif %}>Bad</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label>Level 2:</label>
+                    <input type="text" name="filter_level2" value="{{ filters.level2 or '' }}" placeholder="Category">
+                </div>
+                <!-- Inside the filters-panel -->
+                <div class="filter-group">
+                    <label>Review Status:</label>
+                    <select name="review_status">
+                        <option value="">All</option>
+                        <option value="reviewed" {% if request.query_params.get('review_status') == 'reviewed' %}selected{% endif %}>Reviewed</option>
+                        <option value="unreviewed" {% if request.query_params.get('review_status') == 'unreviewed' %}selected{% endif %}>Unreviewed</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Author:</label>
+                    <input type="text" name="filter_author" value="{{ filters.author or '' }}" placeholder="Author name">
+                </div>
+                
+                <div class="filter-group">
+                    <label>Video:</label>
+                    <input type="text" name="filter_video" value="{{ filters.video or '' }}" placeholder="Video title">
+                </div>
+                
+                <div class="filter-group">
+                    <label>Search:</label>
+                    <input type="text" name="search" value="{{ filters.search or '' }}" placeholder="Search in comments">
+                </div>
+                
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-primary">Apply Filters</button>
+                    <a href="/comments" class="btn btn-secondary">Clear</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    
+
+    <!-- Comments Table -->
+    
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="#" onclick="loadPage(1); return false;" class="page-link">« First</a>
+        <a href="#" onclick="loadPage({{ page-1 }}); return false;" class="page-link">‹ Prev</a>
+        {% endif %}
+
+        <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
+
+        {% if page < total_pages %}
+        <a href="#" onclick="loadPage({{ page+1 }}); return false;" class="page-link">Next ›</a>
+        <a href="#" onclick="loadPage({{ total_pages }}); return false;" class="page-link">Last »</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Comment Detail Modal -->
+<div id="commentModal" class="modal">
+    <div class="modal-content">
+        <span class="modal-close">&times;</span>
+        <div id="commentDetail"></div>
+    </div>
+</div>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const selectAll = document.getElementById('select-all');
+        if (selectAll) {
+            selectAll.addEventListener('change', function(e) {
+                const checkboxes = document.querySelectorAll('.select-item');
+                checkboxes.forEach(cb => cb.checked = e.target.checked);
+            });
+        }
+    });
+</script>
+<script>
+// Refresh table and stats without reload
+async function refreshCommentsTable() {
+    const url = window.location.href;
+    const response = await fetch(url);
+    const html = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    document.querySelector('.comments-table tbody').replaceWith(doc.querySelector('.comments-table tbody'));
+    document.querySelector('.stats-grid').replaceWith(doc.querySelector('.stats-grid'));
+    document.querySelector('.pagination').replaceWith(doc.querySelector('.pagination'));
+}
+
+// Bulk action
+async function performBulkAction() {
+    const selected = Array.from(document.querySelectorAll('.select-item:checked')).map(cb => cb.value);
+    const action = document.getElementById('bulk-action-select').value;
+    if (selected.length === 0) { alert('Select comments first'); return; }
+    if (!action) { alert('Select an action'); return; }
+
+    const response = await fetch('/comments/batch/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment_ids: selected, action: action })
+    });
+    if (response.ok) {
+        await refreshCommentsTable();  // reload only the table and stats
+        // Uncheck all boxes after refresh
+        document.querySelectorAll('.select-item').forEach(cb => cb.checked = false);
+    } else {
+        alert('Error');
+    }
+}
+// Helper
+function getSelectedIds() {
+    return Array.from(document.querySelectorAll('.select-item:checked')).map(cb => cb.value);
+}
+
+// Update level2 inline
+async function updateLevel2(level2Value, commentId) {
+    const res = await fetch('/comments/batch/level2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment_ids: [commentId], level2: level2Value })
+    });
+    if (res.ok) {
+        const row = document.querySelector(`tr[data-comment-id="${commentId}"]`);
+        if (row) row.querySelector('td:nth-child(6)').textContent = level2Value;
+    } else {
+        alert('Update failed');
+    }
+}
+
+// Update level3 inline
+async function updateLevel3(level3Value, commentId) {
+    const res = await fetch('/comments/batch/level3', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment_ids: [commentId], level3: level3Value })
+    });
+    if (res.ok) {
+        const row = document.querySelector(`tr[data-comment-id="${commentId}"]`);
+        if (row) row.querySelector('td:nth-child(7)').textContent = level3Value;
+    } else {
+        alert('Update failed');
+    }
+}
+
+// Pagination: load a specific page
+async function loadPage(page) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', page);
+    const response = await fetch(url);
+    const html = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    document.querySelector('.comments-table tbody').replaceWith(doc.querySelector('.comments-table tbody'));
+    document.querySelector('.stats-grid').replaceWith(doc.querySelector('.stats-grid'));
+    document.querySelector('.pagination').replaceWith(doc.querySelector('.pagination'));
+    window.history.pushState({}, '', url);
+}
+
+</script>
+
+
+<script>
+//     function performBulkAction(event) {
+//     if (event) event.preventDefault();
+//     const selected = Array.from(document.querySelectorAll('.select-item:checked')).map(cb => cb.value);
+//     const action = document.getElementById('bulk-action-select').value;
+
+//     if (selected.length === 0) {
+//         alert('Please select items first');
+//         return;
+//     }
+//     if (!action) {
+//         alert('Please select an action');
+//         return;
+//     }
+
+//     // Optional confirmation
+//     let confirmMsg = `Mark ${selected.length} comments as `;
+//     if (action === 'good') confirmMsg += 'Good?';
+//     else if (action === 'bad') confirmMsg += 'Bad?';
+//     else confirmMsg += 'Neutral (reviewed only)?';
+//     if (!confirm(confirmMsg)) return;
+
+//     fetch('/comments/batch/review', {
+//         method: 'POST',
+//         headers: { 'Content-Type': 'application/json' },
+//         body: JSON.stringify({ comment_ids: selected, action: action })
+//     })
+//     .then(response => response.json())
+//     .then(data => {
+//         if (data.success) {
+//             location.reload();
+//         } else {
+//             alert('Error: ' + data.error);
+//         }
+//     })
+//     .catch(error => {
+//         console.error('Fetch error:', error);
+//         alert('Network error: ' + error.message);
+//     });
+// }
+
+    function viewComment(commentId) {
+        fetch(`/comments/${commentId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const modal = document.getElementById('commentModal');
+                    const detail = document.getElementById('commentDetail');
+                    detail.innerHTML = `
+                        <h2>Comment Details</h2>
+                        <pre>${JSON.stringify(data.comment, null, 2)}</pre>
+                    `;
+                    modal.style.display = 'block';
+                }
+            });
+    }
+
+    function editComment(commentId) {
+        window.location.href = `/comments/${commentId}/edit`;
+    }
+
+    function deleteComment(commentId) {
+        if (confirm('Are you sure you want to delete this comment?')) {
+            fetch(`/comments/${commentId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            });
+        }
+    }
+
+    // Modal close
+    document.querySelector('.modal-close').addEventListener('click', function() {
+        document.getElementById('commentModal').style.display = 'none';
+    });
+
+    window.addEventListener('click', function(event) {
+        const modal = document.getElementById('commentModal');
+        if (event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+
+    // ... existing functions (viewComment, editComment, deleteComment, etc.)
+
+    async function fetchSubcategories(level2Name, commentId) {
+        if (!level2Name) return [];
+        const categories = await fetch('/admin/api/categories').then(r => r.json());
+        const cat = categories.find(c => c.name === level2Name);
+        if (cat) {
+            const subs = await fetch(`/admin/api/categories/${cat.id}/subcategories`).then(r => r.json());
+            return subs;
+        }
+        return [];
+    }
+
+    // async function updateLevel2(level2Value, commentId) {
+    //     const response = await fetch(`/comments/${commentId}/review`, {
+    //         method: 'POST',
+    //         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    //         body: new URLSearchParams({ level1: 'bad', level2: level2Value, level3: '' })
+    //     });
+    //     if (response.ok) {
+    //         // Trigger event for the level3 dropdown to reload subcategories
+    //         window.dispatchEvent(new CustomEvent('level2-change', { detail: { commentId, value: level2Value } }));
+    //     } else {
+    //         alert('Failed to update category');
+    //     }
+    // }
+
+    async function updateLevel3(level3Value, commentId) {
+        const response = await fetch(`/comments/${commentId}/review`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ level1: 'bad', level2: document.querySelector(`tr[data-comment-id="${commentId}"] td:nth-child(6) select`).value, level3: level3Value })
+        });
+        if (!response.ok) alert('Failed to update subcategory');
+    }
+
+    async function updateLevel2(level2Value, commentId) {
+        const response = await fetch('/comments/batch/level2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comment_ids: [commentId], level2: level2Value })
+        });
+        if (response.ok) {
+            // Optionally show a success message or reload the page
+            console.log('Level2 updated');
+        } else {
+            const err = await response.json();
+            alert('Failed to update category: ' + (err.detail || 'Unknown error'));
+        }
+    }
+
+    async function updateLevel3(level3Value, commentId) {
+        const response = await fetch('/comments/batch/level3', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comment_ids: [commentId], level3: level3Value })
+        });
+        if (response.ok) {
+            console.log('Level3 updated');
+        } else {
+            const err = await response.json();
+            alert('Failed to update subcategory: ' + (err.detail || 'Unknown error'));
+        }
+    }
+
+    async function bulkSetLevel2() {
+        const selected = Array.from(document.querySelectorAll('.select-item:checked')).map(cb => cb.value);
+        const level2 = document.getElementById('bulk-level2').value;
+        if (selected.length === 0) { alert('Select comments first'); return; }
+        if (!level2) { alert('Select a level2 category'); return; }
+        const response = await fetch('/comments/batch/level2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comment_ids: selected, level2 })
+        });
+        if (response.ok) location.reload();
+        else alert('Error');
+    }
+
+    async function bulkSetLevel3() {
+        const selected = Array.from(document.querySelectorAll('.select-item:checked')).map(cb => cb.value);
+        const level3 = document.getElementById('bulk-level3').value;
+        if (selected.length === 0) { alert('Select comments first'); return; }
+        if (!level3) { alert('Select a level3 subcategory'); return; }
+        const response = await fetch('/comments/batch/level3', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comment_ids: selected, level3 })
+        });
+        if (response.ok) location.reload();
+        else alert('Error');
+    }
+
+    // Update bulk-level3 dropdown when level2 is selected
+    document.getElementById('bulk-level2').addEventListener('change', async (e) => {
+        const level2 = e.target.value;
+        const level3Select = document.getElementById('bulk-level3');
+        level3Select.innerHTML = '<option value="">Select Subcategory</option>';
+        if (!level2) {
+            level3Select.disabled = true;
+            return;
+        }
+        const categories = await fetch('/admin/api/categories').then(r => r.json());
+        const cat = categories.find(c => c.name === level2);
+        if (cat) {
+            const subs = await fetch(`/admin/api/categories/${cat.id}/subcategories`).then(r => r.json());
+            subs.forEach(sub => {
+                const option = document.createElement('option');
+                option.value = sub.name;
+                option.textContent = sub.name;
+                level3Select.appendChild(option);
+            });
+            level3Select.disabled = false;
+        } else {
+            level3Select.disabled = true;
+        }
+    });
+</script>
+{% endblock %}

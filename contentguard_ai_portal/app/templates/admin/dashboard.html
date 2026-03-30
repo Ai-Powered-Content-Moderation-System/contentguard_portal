@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - ContentGuard AI{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <div class="admin-header">
+        <h1>Admin Dashboard</h1>
+        <div class="admin-nav">
+            <a href="/admin/users" class="btn btn-secondary">Manage Users</a>
+            <a href="/admin/comments" class="btn btn-secondary">Manage Comments</a>
+            <a href="/admin/patterns" class="btn btn-secondary">Extraction Patterns</a>
+            <a href="/admin/extraction-jobs" class="btn btn-secondary">Manage Extraction Jobs</a>
+        </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="quick-stats">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-value" id="total-users">0</span>
+                <span class="stat-label">Total Users</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="total-comments">0</span>
+                <span class="stat-label">Total Comments</span>
+            </div>
+            <div class="stat-card bad">
+                <span class="stat-value" id="bad-comments">0</span>
+                <span class="stat-label">Bad Comments</span>
+            </div>
+            <div class="stat-card pending">
+                <span class="stat-value" id="unreviewed">0</span>
+                <span class="stat-label">Unreviewed</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart Section -->
+    <div class="chart-container">
+        <canvas id="category-chart"></canvas>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="recent-activity">
+        <h2>Recent Extraction Jobs</h2>
+        <table class="admin-table" id="recent-jobs">
+            <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>Video</th>
+                    <th>Status</th>
+                    <th>Comments</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Populated by JS -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadAdminStats();
+    loadRecentJobs();
+    loadCategoryChart();
+});
+
+async function loadAdminStats() {
+    const response = await fetch('/admin/stats');
+    const data = await response.json();
+    if (data.success) {
+        document.getElementById('total-users').textContent = data.stats.total_users;
+        document.getElementById('total-comments').textContent = data.stats.total_comments;
+        document.getElementById('bad-comments').textContent = data.stats.bad_comments;
+        document.getElementById('unreviewed').textContent = data.stats.unreviewed;
+    }
+}
+
+async function loadRecentJobs() {
+    const response = await fetch('/extract/jobs?per_page=5');
+    const data = await response.json();
+    if (data.success) {
+        const tbody = document.querySelector('#recent-jobs tbody');
+        tbody.innerHTML = data.jobs.map(job => `
+            <tr>
+                <td>${job.job_id.substring(0,8)}...</td>
+                <td>${job.video_title || 'N/A'}</td>
+                <td><span class="job-status status-${job.status}">${job.status}</span></td>
+                <td>${job.extracted}/${job.total}</td>
+                <td>${new Date(job.created_at).toLocaleDateString()}</td>
+            </tr>
+        `).join('');
+    }
+}
+
+async function loadCategoryChart() {
+    const response = await fetch('/classify/stats');
+    const data = await response.json();
+    if (data.success && data.stats.categories) {
+        const ctx = document.getElementById('category-chart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(data.stats.categories),
+                datasets: [{
+                    label: 'Comments per Category',
+                    data: Object.values(data.stats.categories),
+                    backgroundColor: '#06e0d5'
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { beginAtZero: true, ticks: { color: '#fff' } } },
+                plugins: { legend: { labels: { color: '#fff' } } }
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

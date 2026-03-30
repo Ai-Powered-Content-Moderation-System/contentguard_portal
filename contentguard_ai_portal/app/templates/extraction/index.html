@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block title %}Extraction Requests - ContentGuard AI{% endblock %}
+
+{% block content %}
+<div class="extraction-container">
+    <div class="header-section">
+        <h1>📥 Request YouTube Extraction</h1>
+        <p>Submit a YouTube URL and the admin will process it. You'll be notified when it's ready.</p>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ total_jobs }}</div>
+            <div class="stat-label">Requests Submitted</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ total_extracted }}</div>
+            <div class="stat-label">Comments Extracted</div>
+        </div>
+    </div>
+
+    <div class="method-card">
+        <h3>🔗 New Extraction Request</h3>
+        <form id="extract-form">
+            <div class="form-group">
+                <label for="url">YouTube URL</label>
+                <input type="text" id="url" name="url" required placeholder="https://www.youtube.com/watch?v=...">
+            </div>
+            <div class="form-group">
+                <label for="max_comments">Max Comments (optional)</label>
+                <input type="number" id="max_comments" name="max_comments" value="500" min="10" max="2000">
+            </div>
+            <button type="submit" class="btn btn-primary">Submit Request</button>
+        </form>
+        <div id="submit-message" style="margin-top: 1rem; display: none;"></div>
+    </div>
+
+    <div class="recent-jobs">
+        <h2>My Extraction Requests</h2>
+        <div id="my-jobs-container">
+            <p>Loading...</p>
+        </div>
+    </div>
+</div>
+
+<style>
+.extraction-container {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+.method-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 15px;
+    padding: 2rem;
+    border: 1px solid var(--glass-border);
+    margin: 2rem 0;
+}
+.form-group {
+    margin-bottom: 1rem;
+}
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+}
+.form-group input {
+    width: 100%;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--glass-border);
+    border-radius: 5px;
+    color: white;
+}
+.btn-primary {
+    background: var(--primary-color);
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 5px;
+    color: white;
+    cursor: pointer;
+}
+.recent-jobs {
+    margin-top: 2rem;
+}
+.jobs-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 10px;
+    overflow: hidden;
+}
+.jobs-table th {
+    background: rgba(6, 224, 213, 0.1);
+    padding: 1rem;
+    text-align: left;
+    color: var(--primary-color);
+}
+.jobs-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.job-status {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+.status-pending { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.status-processing { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+.status-completed { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.status-failed { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-secondary);
+}
+.alert-success { background: rgba(16,185,129,0.2); border: 1px solid #10b981; padding: 0.5rem; border-radius: 4px; }
+.alert-error { background: rgba(239,68,68,0.2); border: 1px solid #ef4444; padding: 0.5rem; border-radius: 4px; }
+.btn-icon {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0.25rem;
+    transition: color 0.3s ease;
+}
+.btn-icon:hover {
+    color: var(--primary-color);
+}
+</style>
+
+<script>
+    async function loadMyJobs() {
+        const response = await fetch('/extract/my-jobs');
+        const jobs = await response.json();
+        const container = document.getElementById('my-jobs-container');
+        if (jobs.length === 0) {
+            container.innerHTML = '<p>No requests yet.</p>';
+            return;
+        }
+        let html = '<table class="jobs-table">';
+        html += '<thead><tr><th>Video URL</th><th>Status</th><th>Requested</th><th>Completed</th><th>Comments</th><th>Actions</th></tr></thead><tbody>';
+        for (const job of jobs) {
+            html += `
+                <tr>
+                    <td><a href="${job.video_url}" target="_blank">${job.video_title || job.video_url}</a></td>
+                    <td><span class="job-status status-${job.status}">${job.status}</span></td>
+                    <td>${new Date(job.requested_at).toLocaleString()}</td>
+                    <td>${job.completed_at ? new Date(job.completed_at).toLocaleString() : '-'}</td>
+                    <td>${job.comment_count || 0}</td>
+                    <td>${job.status === 'completed' ? `<a href="/extract/jobs/${job.job_id}/comments" class="btn-icon" title="View Comments">👁️</a>` : ''}<button class="btn-icon sparkle" onclick="showFilterModal('${job.job_id}')" title="Apply Filters">✨</button></td>
+                </tr>
+            `;
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    document.getElementById('extract-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const url = document.getElementById('url').value;
+        const max_comments = document.getElementById('max_comments').value;
+        const response = await fetch('/extract/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, max_comments })
+        });
+        const data = await response.json();
+        const messageDiv = document.getElementById('submit-message');
+        if (response.ok) {
+            messageDiv.innerHTML = `<div class="alert alert-success">✅ ${data.message}</div>`;
+            loadMyJobs();
+        } else {
+            messageDiv.innerHTML = `<div class="alert alert-error">❌ Error: ${data.detail}</div>`;
+        }
+        messageDiv.style.display = 'block';
+        setTimeout(() => { messageDiv.style.display = 'none'; }, 5000);
+    });
+
+    loadMyJobs();
+</script>
+<!-- Filter Modal (as above) -->
+
+<script>
+    let currentJobId = null;
+
+    function showFilterModal(jobId) {
+        currentJobId = jobId;
+        document.getElementById('filterModal').style.display = 'block';
+    }
+
+    function closeFilterModal() {
+        document.getElementById('filterModal').style.display = 'none';
+    }
+
+    async function applyFilters(type) {
+        if (!currentJobId) {
+            alert('No job selected.');
+            return;
+        }
+        const progressDiv = document.getElementById('filterProgress');
+        progressDiv.style.display = 'block';
+        try {
+            const res = await fetch(`/extract/jobs/${currentJobId}/comments-ids`);
+            const data = await res.json();
+            if (data.comment_ids && data.comment_ids.length) {
+                const response = await fetch('/comments/apply-filters', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comment_ids: data.comment_ids, filter_type: type })
+                });
+                const result = await response.json();
+                alert(result.message);
+                location.reload();  // or update UI dynamically
+            } else {
+                alert('No comments found in this job.');
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        } finally {
+            progressDiv.style.display = 'none';
+            closeFilterModal();
+        }
+    }
+
+    // Close modal when clicking the ×
+    document.addEventListener('DOMContentLoaded', function() {
+        const closeBtn = document.querySelector('#filterModal .modal-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeFilterModal);
+        }
+        // Also close when clicking outside the modal content
+        const modal = document.getElementById('filterModal');
+        if (modal) {
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    closeFilterModal();
+                }
+            });
+        }
+    });
+</script>
+
+
+...
+{% endblock %}

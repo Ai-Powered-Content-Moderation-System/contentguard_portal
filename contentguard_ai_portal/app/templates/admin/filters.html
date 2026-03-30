@@ -1,0 +1,17 @@
+<form method="post" action="/admin/filters/import-from-txt" enctype="multipart/form-data">
+    <div class="form-group">
+        <label>Choose TXT file (format: [category]{phrase})</label>
+        <input type="file" name="file" accept=".txt" required>
+    </div>
+    <div class="form-group">
+        <label>Language of the phrases</label>
+        <select name="language">
+            <option value="auto">Auto-detect (leave empty)</option>
+            <option value="english">English</option>
+            <option value="hindi">Hindi</option>
+            <option value="hinglish">Hinglish</option>
+        </select>
+        <small>If "Auto-detect", language field will be set to NULL.</small>
+    </div>
+    <button type="submit" class="btn btn-primary">Import Filters</button>
+</form>

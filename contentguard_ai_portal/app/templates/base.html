@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ContentGuard AI{% endblock %}</title>
+    
+    <!-- Theme CSS -->
+    {% if user and user.theme_preference == 'old' %}
+        <link rel="stylesheet" href="{{ url_for('static', path='css/glass.css') }}">
+    {% else %}
+        <link rel="stylesheet" href="{{ url_for('static', path='css/glass_v1.css') }}">
+    {% endif %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/notification.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% if user and user.is_admin %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}">
+    {% endif %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/comments.css') }}">
+    
+    {% block extra_css %}{% endblock %}
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Theme Switcher -->
+    {% if user %}
+    <div class="theme-toggle">
+        <form action="/auth/switch-theme" method="POST">
+            <button type="submit" class="theme-btn">
+                {% if user.theme_preference == 'old' %}
+                    🌟 Switch to Modern
+                {% else %}
+                    🕰️ Switch to Classic
+                {% endif %}
+            </button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- Navigation -->
+    {% if user %}
+    <nav class="top-nav">
+        <div class="nav-brand">
+            <img src="{{ url_for('static', path='images/logo.png') }}" alt="ContentGuard AI" height="40">
+            <span>ContentGuard AI</span>
+        </div>
+        <div class="nav-links">
+            <a href="/dashboard">Dashboard</a>
+            <a href="/comments">Comments</a>
+            <a href="/extract">Extract</a>
+            <a href="/classify">Classify</a>
+            {% if user.is_admin %}
+            <a href="/admin/dashboard">Admin</a>
+            <a href="/admin/categories">Categories</a>
+            <a href="/admin/predefined-filters">Predefined Filters</a>
+            {% endif %}
+            <div class="user-info" x-data="{
+                notificationsOpen: false,
+                unreadCount: 0,
+                notifications: [],
+                async loadNotifications() {
+                    try {
+                        const res = await fetch('/api/notifications');
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        const data = await res.json();
+                        this.notifications = data;
+                        this.unreadCount = data.filter(n => !n.read).length;
+                    } catch (err) {
+                        console.error('Failed to load notifications:', err);
+                    }
+                },
+                async markRead(notifId) {
+                    try {
+                        await fetch(`/api/notifications/${notifId}/read`, { method: 'POST' });
+                        await this.loadNotifications();
+                    } catch (err) {
+                        console.error('Failed to mark as read:', err);
+                    }
+                },
+                async markAllRead() {
+                    try {
+                        await fetch('/api/notifications/mark-all-read', { method: 'POST' });
+                        await this.loadNotifications();
+                    } catch (err) {
+                        console.error('Failed to mark all as read:', err);
+                    }
+                },
+                formatTime(isoString) {
+                    return new Date(isoString).toLocaleString();
+                }
+            }" x-init="loadNotifications()">
+                <!-- Notification Bell -->
+                <div class="notifications-dropdown" @click.away="notificationsOpen = false">
+                    <button class="notification-bell" @click="notificationsOpen = !notificationsOpen">
+                        🔔
+                        <span x-show="unreadCount > 0" class="notification-badge" x-text="unreadCount"></span>
+                    </button>
+                    <div x-show="notificationsOpen" class="dropdown-menu" x-cloak>
+                        <div class="dropdown-header">
+                            <strong>Notifications</strong>
+                            <button @click="markAllRead()" class="mark-all-read">Mark all read</button>
+                        </div>
+                        <div class="notifications-list">
+                            <template x-for="notif in notifications" :key="notif.id">
+                                <div class="notification-item" :class="{ unread: !notif.read }" @click="markRead(notif.id)">
+                                    <div class="notification-message" x-text="notif.message"></div>
+                                    <div class="notification-time" x-text="formatTime(notif.created_at)"></div>
+                                </div>
+                            </template>
+                            <div x-show="notifications.length === 0" class="empty-notifications">No notifications</div>
+                        </div>
+                    </div>
+                </div>
+
+                <span class="user-avatar">{{ user.username[0]|upper }}</span>
+                <span>{{ user.username }}</span>
+                <a href="/auth/logout" class="logout-btn">Logout</a>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <!-- Main Content -->
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <!-- Filter Modal -->
+    <div id="filterModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h3>Apply Filters</h3>
+            <p>Select filter set to apply to comments in this job:</p>
+            <div>
+                <button class="btn btn-primary" onclick="applyFilters('predefined')">Apply Predefined Filters</button>
+                <button class="btn btn-secondary" onclick="applyFilters('custom')">Apply My Custom Filters</button>
+            </div>
+            <div id="filterProgress" style="display: none; margin-top: 1rem;">Processing...</div>
+        </div>
+    </div>
+    <!-- Version Badge -->
+    <div class="version-badge">v6.5.9</div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', path='js/main.js') }}"></script>
+    {% if user and user.is_admin %}
+    <script src="{{ url_for('static', path='js/admin.js') }}"></script>
+    <script>
+        document.addEventListener('alpine:init', () => {
+            console.log("Alpine init – registering notificationHandler");
+            Alpine.data('notificationHandler', () => ({
+                notificationsOpen: false,
+                unreadCount: 0,
+                notifications: [],
+
+                async loadNotifications() {
+                    try {
+                        const res = await fetch('/api/notifications');
+                        const data = await res.json();
+                        this.notifications = data;
+                        this.unreadCount = data.filter(n => !n.read).length;
+                    } catch (err) {
+                        console.error('Failed to load notifications:', err);
+                    }
+                },
+
+                async markRead(notifId) {
+                    try {
+                        await fetch(`/api/notifications/${notifId}/read`, { method: 'POST' });
+                        await this.loadNotifications();
+                    } catch (err) {
+                        console.error('Failed to mark as read:', err);
+                    }
+                },
+
+                async markAllRead() {
+                    try {
+                        await fetch('/api/notifications/mark-all-read', { method: 'POST' });
+                        await this.loadNotifications();
+                    } catch (err) {
+                        console.error('Failed to mark all as read:', err);
+                    }
+                },
+
+                formatTime(isoString) {
+                    return new Date(isoString).toLocaleString();
+                }
+            }));
+        });
+    </script>
+    <!-- Filter Modal (as above) -->
+
+    <script>
+        
+        let currentJobId = null;
+
+        function showFilterModal(jobId) {
+            currentJobId = jobId;
+            document.getElementById('filterModal').style.display = 'block';
+        }
+
+        function closeFilterModal() {
+            document.getElementById('filterModal').style.display = 'none';
+        }
+
+        async function applyFilters(type) {
+            if (!currentJobId) {
+                alert('No job selected.');
+                return;
+            }
+            const progressDiv = document.getElementById('filterProgress');
+            progressDiv.style.display = 'block';
+            try {
+                const res = await fetch(`/extract/jobs/${currentJobId}/comments-ids`);
+                const data = await res.json();
+                if (data.comment_ids && data.comment_ids.length) {
+                    const response = await fetch('/comments/apply-filters', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ comment_ids: data.comment_ids, filter_type: type })
+                    });
+                    const result = await response.json();
+                    alert(result.message);
+                    location.reload();  // or update UI dynamically
+                } else {
+                    alert('No comments found in this job.');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            } finally {
+                progressDiv.style.display = 'none';
+                closeFilterModal();
+            }
+        }
+
+        // Close modal when clicking the ×
+        document.addEventListener('DOMContentLoaded', function() {
+            const closeBtn = document.querySelector('#filterModal .modal-close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', closeFilterModal);
+            }
+            // Also close when clicking outside the modal content
+            const modal = document.getElementById('filterModal');
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        closeFilterModal();
+                    }
+                });
+            }
+        });
+    </script>
+
+
+...
+    {% endif %}
+    {% block scripts %}{% endblock %}
+    
+</body>
+</html>

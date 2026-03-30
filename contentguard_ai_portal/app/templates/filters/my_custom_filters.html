@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}My Custom Filters{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>My Custom Filters</h2>
+    <form id="add-filter-form">
+        <div class="form-group">
+            <label>Phrase (case-insensitive)</label>
+            <input type="text" name="phrase" required>
+        </div>
+        <div class="form-group">
+            <label>Category (optional)</label>
+            <input type="text" name="category">
+        </div>
+        <button type="submit" class="btn btn-primary">Add Filter</button>
+    </form>
+
+    <h3>Existing Filters</h3>
+    <table class="table">
+        <thead>
+            <tr><th>Phrase</th><th>Category</th><th>Action</th><th>Created</th><th></th></tr>
+        </thead>
+        <tbody id="filter-list">
+            {% for f in filters %}
+            <tr data-id="{{ f.id }}">
+                <td>{{ f.phrase }}</td>
+                <td>{{ f.category or '-' }}</td>
+                <td>{{ f.action }}</td>
+                <td>{{ f.created_at.strftime('%Y-%m-%d') }}</td>
+                <td><button class="btn-danger btn-sm delete-filter" data-id="{{ f.id }}">Delete</button></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+    document.getElementById('add-filter-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const res = await fetch('/comments/filters/custom/add', {
+            method: 'POST',
+            body: formData
+        });
+        if (res.ok) location.reload();
+        else alert('Failed to add filter');
+    });
+
+    document.querySelectorAll('.delete-filter').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            if (confirm('Delete this filter?')) {
+                const res = await fetch(`/comments/filters/custom/${id}/delete`, { method: 'POST' });
+                if (res.ok) btn.closest('tr').remove();
+                else alert('Delete failed');
+            }
+        });
+    });
+</script>
+{% endblock %}

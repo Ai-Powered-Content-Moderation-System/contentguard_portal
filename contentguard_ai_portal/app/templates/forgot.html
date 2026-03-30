@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Forgot Password - ContentGuard AI{% endblock %}
+
+{% block content %}
+<div class="glass-container" style="max-width: 500px;">
+    <h1>🔐 Account Recovery</h1>
+    <p>We'll help you recover your username or reset your password.</p>
+
+    <!-- Recover Username by Name -->
+    <div style="margin-bottom: 2rem;">
+        <h3>Recover Username</h3>
+        <form method="POST" action="/auth/forgot">
+            <div class="form-group">
+                <label for="name">Enter your full name</label>
+                <input type="text" id="name" name="name" required placeholder="John Doe">
+            </div>
+            <button type="submit" class="btn" style="width: 100%;">Get Username</button>
+        </form>
+        {% if message %}
+            <div class="alert alert-success" style="margin-top: 1rem;">{{ message|safe }}</div>
+        {% endif %}
+        {% if error %}
+            <div class="alert alert-error" style="margin-top: 1rem;">{{ error }}</div>
+        {% endif %}
+    </div>
+
+    <hr style="border-color: rgba(255,255,255,0.2); margin: 1.5rem 0;">
+
+    <!-- Reset Password by Username -->
+    <div>
+        <h3>Reset Password</h3>
+        <form method="POST" action="/auth/reset-password">
+            <div class="form-group">
+                <label for="username">Your Username</label>
+                <input type="text" id="username" name="username" required placeholder="e.g., john.abc123">
+            </div>
+            <div class="form-group">
+                <label for="new_password">New Password</label>
+                <input type="password" id="new_password" name="new_password" required>
+            </div>
+            <button type="submit" class="btn" style="width: 100%;">Reset Password</button>
+        </form>
+        {% if reset_message %}
+            <div class="alert alert-success" style="margin-top: 1rem;">{{ reset_message }}</div>
+        {% endif %}
+        {% if reset_error %}
+            <div class="alert alert-error" style="margin-top: 1rem;">{{ reset_error }}</div>
+        {% endif %}
+    </div>
+
+    <div style="text-align: center; margin-top: 1.5rem;">
+        <p><a href="/auth/login">← Back to Login</a></p>
+    </div>
+</div>
+
+<style>
+.alert {
+    padding: 0.75rem;
+    border-radius: 6px;
+}
+.alert-success {
+    background: rgba(16, 185, 129, 0.2);
+    border: 1px solid #10b981;
+    color: #10b981;
+}
+.alert-error {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid #ef4444;
+    color: #ef4444;
+}
+</style>
+{% endblock %}
